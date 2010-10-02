@@ -2041,15 +2041,27 @@ EXTRA-ARGS is a string of command line flags."
   scion-supported-languages)
 
 (defun haskell-insert-language (lang)
-  "Insert a LANGUAGE pragma at the top of the file."
-  ;; TODO: automatically jump to or insert LANGUAGE pragma
+  "Insert a LANGUAGE pragma at the top of the file, unless already used.
+
+When called non-interactively, returns t if inserted, nil if not needed."
   (interactive
    (let ((langs (scion-supported-languages)))
-     (list (scion-completing-read "Language: " langs))))
+     (list (scion-completing-read "Language: " langs nil t))))
   (save-excursion
     (goto-char (point-min))
-    (insert "{-# LANGUAGE " lang " #-}\n"))
-  (message "Added language %s" lang))
+    (if (re-search-forward (concat "^[[:space:]]*{-#[[:space:]\n]*"
+				   "LANGUAGE[[:space:]\n]+"
+				   "[[:alnum:][:space:]\n,]*\\b"
+				   (regexp-quote lang) "\\b") nil t)
+	(when (interactive-p)
+	  (message "%s is already in use" lang))
+      (goto-char (point-min))
+      (when (re-search-forward "^\\s-*{-#\\s-*LANGUAGE " nil t)
+	(goto-char (match-beginning 0)))
+      (insert "{-# LANGUAGE " lang " #-}\n")
+      (when (interactive-p)
+	(message "Added language %s" lang))
+      t)))
 
 (defvar scion-supported-pragmas nil)
 
