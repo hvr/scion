@@ -2256,7 +2256,7 @@ forces it to be off.  NIL toggles the current state."
 		 (scion-report-compilation-result comp-rslt
 						  (current-buffer))
 	       (scion-report-status "[?]")
-	       (message comp-rslt)))
+	       (scion-report-compilation-result comp-rslt (current-buffer))))
 	   nil)))))
 
 (make-variable-buffer-local
