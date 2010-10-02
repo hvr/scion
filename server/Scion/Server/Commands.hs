@@ -383,8 +383,8 @@ cmdListSupportedPragmas =
 supportedPragmas :: [String]
 supportedPragmas =
     [ "OPTIONS_GHC", "LANGUAGE", "INCLUDE", "WARNING", "DEPRECATED"
-    , "INLINE", "NOINLINE", "RULES", "SPECIALIZE", "UNPACK", "SOURCE"
-    , "SCC"
+    , "INLINABLE", "INLINE", "NOINLINE", "RULES", "SPECIALIZE", "UNPACK"
+    , "SCC", "SOURCE"
     , "LINE" -- XXX: only used by code generators, still include?
     ]
 
