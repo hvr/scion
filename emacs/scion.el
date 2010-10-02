@@ -2048,9 +2048,12 @@ EXTRA-ARGS is a string of command line flags."
     (insert "{-# LANGUAGE " lang " #-}\n"))
   (message "Added language %s" lang))
 
+(defvar scion-supported-pragmas nil)
+
 (defun scion-supported-pragmas ()
-  ;; TODO: cache result
-  (scion-eval '(list-supported-pragmas)))
+  (unless scion-supported-pragmas
+    (setq scion-supported-pragmas (scion-eval '(list-supported-pragmas))))
+  scion-supported-pragmas)
 
 (defun haskell-insert-pragma (pragma)
   "Insert a pragma at the current point."
