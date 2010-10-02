@@ -1,6 +1,6 @@
 ~$
-\.(?:elc|hi|o|swp)$
-^(?:dist|Setup|TAGS)$
+\.(?:elc|hi|o|orig|swp)$
+^(?:.dist-scion|dist|Setup|TAGS)$
 
 syntax: glob
 Setup.exe*
