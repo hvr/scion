@@ -2033,9 +2033,12 @@ EXTRA-ARGS is a string of command line flags."
          "")
         (t (format "%2d %s%s " count category (if (= count 1) "" "s")))))
 
+(defvar scion-supported-languages nil)
+
 (defun scion-supported-languages ()
-  ;; TODO: cache result
-  (scion-eval '(list-supported-languages)))
+  (unless scion-supported-languages
+    (setq scion-supported-languages (scion-eval '(list-supported-languages))))
+  scion-supported-languages)
 
 (defun haskell-insert-language (lang)
   "Insert a LANGUAGE pragma at the top of the file."
@@ -2067,12 +2070,17 @@ EXTRA-ARGS is a string of command line flags."
   (scion-eval '(list-supported-flags)))
 
 (defun haskell-insert-flag (flag)
-  "Insert a command line flag at the curretn point."
-  ;; TODO: automatically insert/add OPTIONS pragma
+  "Insert a command line option at the top of the file.
+Sets mark at starting position and pushes mark ring."
   (interactive
    (let ((flags (scion-supported-flags)))
      (list (scion-completing-read "Flag: " flags))))
-  (insert flag))
+  (push-mark)
+  (goto-char (point-min))
+  (when (re-search-forward "^\\s-*{-#\\s-*OPTIONS" nil t)
+    (goto-char (match-beginning 0)))
+  (insert "{-# OPTIONS_GHC " flag " #-}\n")
+  (backward-char 5))
 
 (defun scion-set-command-line-flag (flag)
   (interactive "sCommand Line Flag: ")
