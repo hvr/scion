@@ -197,15 +197,16 @@ that Emacs needs to be restarted. (You have been warned!)")
 
 (defun scion-completing-read (prompt collection &optional predicate require-match
 				     initial-input hist def inherit-input-method)
-  (if (eq scion-completing-read-function 'ido-completing-read)
-      ;; ido-completing-read does not support the last argument.  What
-      ;; a mess.
+  (let ((completion-ignore-case t))
+    (if (eq scion-completing-read-function 'ido-completing-read)
+	;; ido-completing-read does not support the last argument.  What
+	;; a mess.
+	(funcall scion-completing-read-function 
+		 prompt collection predicate require-match initial-input
+		 hist def)
       (funcall scion-completing-read-function 
-	   prompt collection predicate require-match initial-input
-	   hist def)
-    (funcall scion-completing-read-function 
-	   prompt collection predicate require-match initial-input
-	   hist def inherit-input-method)))
+	       prompt collection predicate require-match initial-input
+	       hist def inherit-input-method))))
 
 ;;;---------------------------------------------------------------------------
 ;;;;;; Tree View Widget
@@ -2054,8 +2055,6 @@ EXTRA-ARGS is a string of command line flags."
 (defun haskell-insert-pragma (pragma)
   "Insert a pragma at the current point."
   (interactive (let ((choices (scion-supported-pragmas)))
-		 ;; standard completing-read cannot even deal properly
-		 ;; with upper-case words.
 		 (list (scion-completing-read "Pragma: " choices))))
   (insert "{-# " (upcase pragma) "  #-}")
   (backward-char 4))
