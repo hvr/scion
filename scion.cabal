@@ -6,6 +6,7 @@ author:          Thomas Schilling <nominolo@googlemail.com>
 maintainer:      Thomas Schilling <nominolo@googlemail.com>
 homepage:        http://github.com/nominolo/scion
 synopsis:        Haskell IDE library
+bug-reports:     http://code.google.com/p/scion-lib/issues/list
 description:
   Scion is a Haskell library that aims to implement those parts of a
   Haskell IDE which are independent of a particular front-end.  Scion
@@ -34,6 +35,10 @@ flag server
   default: True
 
 flag cabal_1_8
+
+source-repository head
+  type: git
+  location: http://github.com/nominolo/scion
 
 library
   build-depends:
