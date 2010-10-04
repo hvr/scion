@@ -343,7 +343,7 @@ Scion: Smart Haskell mode.
 
 (defun* scion-start (&key (program scion-program)
 			  (program-args (list 
-                                         "socket" 
+                                         "--autoport"
                                          (concat "--worker-path="
                                                  (expand-file-name scion-worker))))
 			  env
