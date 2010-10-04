@@ -84,6 +84,12 @@ This applies to the *inferior-lisp* buffer and the network connections."
   :type 'integer
   :group 'scion-haskell)
 
+(defcustom scion-multiple-languages t
+  "Whether to prefer to extend an existing LANGUAGE, or create a new one.
+Used by `haskell-insert-language'."
+  :type 'boolean
+  :group 'scion-ui)
+
 (make-variable-buffer-local
  (defvar scion-modeline-string nil
    "The string that should be displayed in the modeline if
@@ -2041,27 +2047,36 @@ EXTRA-ARGS is a string of command line flags."
   scion-supported-languages)
 
 (defun haskell-insert-language (lang)
-  "Insert a LANGUAGE pragma at the top of the file, unless already used.
+  "Add a language extension to the top of the file, unless already used.
+
+If `scion-multiple-languages' is set and there is only one
+LANGUAGE pragma in the buffer, the new extension will be added to
+the existing pragma.  Otherwise, a new LANGUAGE pragma will be
+inserted.
 
 When called non-interactively, returns t if inserted, nil if not needed."
   (interactive
    (let ((langs (scion-supported-languages)))
      (list (scion-completing-read "Language: " langs nil t))))
-  (save-excursion
-    (goto-char (point-min))
-    (if (re-search-forward (concat "^[[:space:]]*{-#[[:space:]\n]*"
-				   "LANGUAGE[[:space:]\n]+"
-				   "[[:alnum:][:space:]\n,]*\\b"
-				   (regexp-quote lang) "\\b") nil t)
-	(when (interactive-p)
-	  (message "%s is already in use" lang))
+  (let ((lang-re "^[[:space:]]*{-#[[:space:]\n]*LANGUAGE\\>"))
+    (save-excursion
       (goto-char (point-min))
-      (when (re-search-forward "^\\s-*{-#\\s-*LANGUAGE " nil t)
-	(goto-char (match-beginning 0)))
-      (insert "{-# LANGUAGE " lang " #-}\n")
-      (when (interactive-p)
-	(message "Added language %s" lang))
-      t)))
+      (if (re-search-forward (concat lang-re "[[:alnum:][:space:]\n,]*\\<"
+				     (regexp-quote lang) "\\>") nil t)
+	  (when (interactive-p)
+	    (message "%s is already in use" lang))
+	(goto-char (point-min))
+	(let (inserted)
+	  (when (re-search-forward lang-re nil t)
+	    (when (and scion-multiple-languages
+		       (not (save-excursion (re-search-forward lang-re nil t))))
+	      (insert " " lang ",")
+	      (setq inserted t)))
+	  (unless inserted
+	    (insert "{-# LANGUAGE " lang " #-}\n")))
+	(when (interactive-p)
+	  (message "Added language %s" lang))
+	t))))
 
 (defvar scion-supported-pragmas nil)
 
