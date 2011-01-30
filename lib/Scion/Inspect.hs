@@ -31,13 +31,21 @@ import Scion.Types.Outline
 import Bag
 import Var ( varType )
 import DataCon ( dataConUserType )
+#if __GLASGOW_HASKELL__ < 700
 import Type ( tidyType )
+#else
+import TcType ( tidyType )
+#endif
 import VarEnv ( emptyTidyEnv )
 
 import Data.Generics.Biplate
 import Data.Generics.UniplateStr hiding ( Str (..) )
-import qualified Data.Generics.Str as U 
+import qualified Data.Generics.Str as U
 import Data.List ( foldl' )
+
+#if __GLASGOW_HASKELL__ >= 700
+import Util(filterOut)
+#endif
 
 #ifdef SCION_DEBUG
 --import FastString
@@ -65,7 +73,12 @@ prettyResult r = ppr r
 
 typeDecls :: TypecheckedMod m => m -> [LTyClDecl Name]
 typeDecls m | Just grp <- renamedSourceGroup `fmap` renamedSource m =
-    [ t | t <- hs_tyclds grp
+    [ t
+#if __GLASGOW_HASKELL__ < 700
+        | t <- hs_tyclds grp
+#else
+        | t <- concat (hs_tyclds grp)
+#endif
         , isDataDecl (unLoc t) 
             || isTypeDecl (unLoc t) 
             || isSynDecl (unLoc t) ]
@@ -74,12 +87,22 @@ typeDecls _ = error "typeDecls: No renamer information available."
 
 classDecls :: RenamedSource -> [LTyClDecl Name]
 classDecls rn_src =
-    [ t | t <- hs_tyclds (renamedSourceGroup rn_src)
+    [ t
+#if __GLASGOW_HASKELL__ < 700
+        | t <- hs_tyclds (renamedSourceGroup rn_src)
+#else
+        | t <- concat (hs_tyclds (renamedSourceGroup rn_src))
+#endif
         , isClassDecl (unLoc t) ]
 
 familyDecls :: RenamedSource -> [LTyClDecl Name]
 familyDecls rn_src =
-    [ t | t <- hs_tyclds (renamedSourceGroup rn_src)
+    [ t
+#if __GLASGOW_HASKELL__ < 700
+        | t <- hs_tyclds (renamedSourceGroup rn_src)
+#else
+        | t <- concat (hs_tyclds (renamedSourceGroup rn_src))
+#endif
         , isFamilyDecl (unLoc t) ]
 
 toplevelNames :: TypecheckedMod m => m -> [Name]
@@ -154,6 +177,43 @@ mkOutlineDef base_dir (L sp t) =
                 Nothing
      | L sp2 n <- tyClDeclNames t]
 
+#if __GLASGOW_HASKELL__ >= 700
+-- Taken from http://www.haskell.org/ghc/docs/6.12.2/html/libraries/ghc-6.12.2/src/HsDecls.html#tyClDeclNames
+tyClDeclNames :: Eq name => TyClDecl name -> [Located name]
+-- ^ Returns all the /binding/ names of the decl, along with their SrcLocs.
+-- The first one is guaranteed to be the name of the decl. For record fields
+-- mentioned in multiple constructors, the SrcLoc will be from the first
+-- occurence.  We use the equality to filter out duplicate field names
+
+tyClDeclNames (TyFamily    {tcdLName = name})    = [name]
+tyClDeclNames (TySynonym   {tcdLName = name})    = [name]
+tyClDeclNames (ForeignType {tcdLName = name})    = [name]
+
+tyClDeclNames (ClassDecl {tcdLName = cls_name, tcdSigs = sigs, tcdATs = ats})
+  = cls_name :
+    concatMap (tyClDeclNames . unLoc) ats ++ [n | L _ (TypeSig n _) <- sigs]
+
+tyClDeclNames (TyData {tcdLName = tc_name, tcdCons = cons})
+  = tc_name : hsConDeclsNames cons
+
+-- Taken from http://www.haskell.org/ghc/docs/6.12.2/html/libraries/ghc-6.12.2/src/HsDecls.html#hsConDeclsNames
+hsConDeclsNames :: (Eq name) => [LConDecl name] -> [Located name]
+  -- See tyClDeclNames for what this does
+  -- The function is boringly complicated because of the records
+  -- And since we only have equality, we have to be a little careful
+hsConDeclsNames cons
+  = snd (foldl do_one ([], []) cons)
+  where
+    do_one (flds_seen, acc) (L _ (ConDecl { con_name = lname, con_details = RecCon flds }))
+	= (map unLoc new_flds ++ flds_seen, lname : new_flds ++ acc)
+	where
+	  new_flds = filterOut (\f -> unLoc f `elem` flds_seen)
+			       (map cd_fld_name flds)
+
+    do_one (flds_seen, acc) (L _ (ConDecl { con_name = lname }))
+	= (flds_seen, lname:acc)
+#endif
+
 valBinds :: FilePath -> HsGroup Name -> [OutlineDef]
 valBinds base_dir grp =
     let ValBindsOut bind_grps _sigs = hs_valds grp
@@ -196,7 +256,12 @@ outline :: TypecheckedMod m =>
         -> [OutlineDef]
 outline base_dir m
   | Just grp <- renamedSourceGroup `fmap` renamedSource m =
-     concatMap (mkOutlineDef base_dir) (hs_tyclds grp)
+     concatMap (mkOutlineDef base_dir)
+#if __GLASGOW_HASKELL__ < 700
+               (hs_tyclds grp)
+#else
+               (concat $ hs_tyclds grp)
+#endif
        ++ valBinds base_dir grp
        ++ instBinds base_dir grp
 outline _ _ = []

@@ -16,7 +16,7 @@ module Scion.Types.Notes
   , locStartCol, locEndCol, locStartLine, locEndLine
   , AbsFilePath(toFilePath), mkAbsFilePath
   , Note(..), NoteKind(..), Notes
-  , ghcSpanToLocation, ghcErrMsgToNote, ghcWarnMsgToNote
+  , ghcSpanToLocation, ghcErrMsgToNote, ghcWarnMsgToNote, scionColToGhcCol
   , ghcMessagesToNotes, trimFile
   )
 where
@@ -241,9 +241,9 @@ ghcSpanToLocation baseDir sp
   | GHC.isGoodSrcSpan sp =
       mkLocation mkLocFile
                  (GHC.srcSpanStartLine sp)
-                 (GHC.srcSpanStartCol sp)
+                 (ghcColToScionCol $ GHC.srcSpanStartCol sp)
                  (GHC.srcSpanEndLine sp)
-                 (GHC.srcSpanEndCol sp)
+                 (ghcColToScionCol $ GHC.srcSpanEndCol sp)
   | otherwise =
       mkNoLoc (GHC.showSDoc (GHC.ppr sp))
  where
@@ -251,6 +251,20 @@ ghcSpanToLocation baseDir sp
        case GHC.unpackFS (GHC.srcSpanFile sp) of
          s@('<':_) -> OtherSrc s
          p -> FileSrc $ mkAbsFilePath baseDir p
+
+ghcColToScionCol :: Int -> Int
+#if __GLASGOW_HASKELL__ < 700
+ghcColToScionCol c=c -- GHC 6.x starts at 0 for columns
+#else
+ghcColToScionCol c=c-1 -- GHC 7 starts at 1 for columns
+#endif
+
+scionColToGhcCol :: Int -> Int
+#if __GLASGOW_HASKELL__ < 700
+scionColToGhcCol c=c -- GHC 6.x starts at 0 for columns
+#else
+scionColToGhcCol c=c+1 -- GHC 7 starts at 1 for columns
+#endif
 
 ghcErrMsgToNote :: FilePath -> GHC.ErrMsg -> Note
 ghcErrMsgToNote = ghcMsgToNote ErrorNote

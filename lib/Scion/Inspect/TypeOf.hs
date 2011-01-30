@@ -34,9 +34,15 @@ typeOf (leaf, path) = case leaf of
     unwrap (WpTyApp t') t      = AppTy t t'
     unwrap (WpTyLam tv) t      = ForAllTy tv t
     -- do something else with coercion/dict vars?
+#if __GLASGOW_HASKELL__ < 700
     unwrap (WpApp v) t         = AppTy t (TyVarTy v)
     unwrap (WpLam v) t         = ForAllTy v t
-    unwrap (WpLet _bs) t       = t
+#else
+    unwrap (WpEvLam v) t       = ForAllTy v t
+    unwrap (WpEvApp _) t       = t
+#endif
+    unwrap (WpLet _) t         = t
+
 #ifdef WPINLINE
     unwrap WpInline t          = t
 #endif

@@ -22,7 +22,11 @@ import Data.List ( nub, sort )
 
 -- | Sorted list of all supported @LANGUAGE@ pragmas.
 supportedLanguages :: [T.Text]
+#if __GLASGOW_HASKELL__ >= 700
+supportedLanguages = sort $ map T.pack Ghc.supportedLanguagesAndExtensions
+#else
 supportedLanguages = sort $ map T.pack Ghc.supportedLanguages
+#endif
 
 -- | Sorted list of all flags allowed in the @OPTIONS@ pragma.
 supportedOptions :: [T.Text]

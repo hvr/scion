@@ -12,14 +12,14 @@
 --
 -- Find things in a syntax tree.
 --
-module Scion.Inspect.Find 
+module Scion.Inspect.Find
   ( findHsThing, SearchResult(..), SearchResults
-  , PosTree(..), PosForest, deepestLeaf, pathToDeepest
+  , PosTree(..), PosForest, deepestLeaf, pathToDeepest, searchBindBag
   , surrounds, overlaps
 #ifdef SCION_DEBUG
   , prop_invCmpOverlap
 #endif
-  ) 
+  )
 where
 
 import Scion.Utils()
@@ -180,7 +180,7 @@ only r = S.singleton (Node r S.empty)
 above :: SearchResult id -> SearchResults id -> SearchResults id
 above r rest = S.singleton (Node r rest)
 
-instance Search Id Id where
+instance Search id Id where
   search _ _ i = only (FoundId i)
 
 instance Search Name Name where
@@ -194,6 +194,22 @@ instance Search id HsLit where
 
 instance Search id id => Search id (IPName id) where
   search p s (IPName i) = search p s i
+
+--instance Search id id => Search id (Located (HsBindLR id id)) where
+-- search p s (L _ a@AbsBinds{})= search p s a
+-- search p _ (L s a)
+--    | p s   = search p s a
+--    | otherwise = mempty
+
+-- at least in GHC7 if you have a AbsBind with a type signature the SrcSpan of the AbsBind covers only the type signature...
+searchBindBag :: Search id id => (SrcSpan -> Bool) -> SrcSpan -> Bag (Located (HsBindLR id id)) -> SearchResults id
+searchBindBag p s bs = mconcat $ fmap (searchBinds p s) (F.toList bs)
+
+searchBinds :: Search id id => (SrcSpan -> Bool) -> SrcSpan -> (Located (HsBindLR id id)) -> SearchResults id
+searchBinds p s (L _ a@AbsBinds{})= search p s a -- ignore location of the absbinds
+searchBinds p _ (L s a)
+    | p s   = search p s a
+    | otherwise = mempty
 
 instance Search id a => Search id (Located a) where
   search p _ (L s a)
@@ -222,10 +238,11 @@ instance (Search id id) => Search id (HsBindLR id id) where
         case b of
           FunBind { fun_id = i, fun_matches = ms } -> 
               search p s i `mappend` search p s ms
-          AbsBinds { abs_binds = bs }  -> search p s bs
+          AbsBinds { abs_binds = bs }  -> searchBindBag p s bs
           PatBind { pat_lhs = lhs, pat_rhs = rhs } ->
               search p s lhs `mappend` search p s rhs
-          _ -> mempty
+          VarBind { var_rhs = rhs } -> search p s rhs    
+
 
 instance (Search id id) => Search id (MatchGroup id) where
   search p s (MatchGroup ms _) = search p s ms
@@ -295,8 +312,13 @@ instance (Search id id) => Search id (HsExpr id) where
           SectionL e o  -> search p s e `mappend` search p s o
           SectionR o e  -> search p s o `mappend` search p s e
           HsCase e mg   -> search p s e `mappend` search p s mg
+#if __GLASGOW_HASKELL__ < 700
           HsIf c t e    -> search p s c `mappend` search p s t 
                                         `mappend` search p s e
+#else
+          HsIf _ c t e  -> search p s c `mappend` search p s t 
+                                        `mappend` search p s e
+#endif
           HsLet bs e    -> search p s bs `mappend` search p s e
           HsDo _ ss e _ -> search p s ss `mappend` search p s e
           ExplicitList _ es     -> search p s es
@@ -323,7 +345,7 @@ instance (Search id id) => Search id (HsExpr id) where
           HsWrap _ e       -> search p s e
           _ -> mempty
 
-#if GHC_VERSION > 610
+#if __GLASGOW_HASKELL__ > 610
 instance (Search id id) => Search id (HsTupArg id) where
   search p s (Present e) = search p s e
   search _ _ _ = mempty
@@ -335,7 +357,7 @@ instance (Search id id) => Search id (HsLocalBindsLR id id) where
 
 instance (Search id id) => Search id (HsValBindsLR id id) where
   search p s (ValBindsOut rec_binds _) =
-      mconcat $ fmap (search p s . snd) rec_binds
+      mconcat $ fmap (searchBindBag p s . snd) rec_binds
   search _ _ _ = mempty
 
 instance (Search id id) => Search id (HsCmdTop id) where
@@ -352,10 +374,17 @@ instance (Search id id) => Search id (StmtLR id id) where
           ExprStmt e _ _     -> search p s e
           LetStmt bs         -> search p s bs
           ParStmt ss         -> search p s (concatMap fst ss)
+#if __GLASGOW_HASKELL__ < 700
           TransformStmt (ss,_) f e -> search p s ss `mappend` search p s f
                                                     `mappend` search p s e
           GroupStmt (ss, _) g -> search p s ss `mappend` search p s g
-          stm | isRecStmt stm -> search p s (recS_stmts stm)
+#else
+          TransformStmt ss _ f e -> search p s ss `mappend` search p s f
+                                                  `mappend` search p s e
+          GroupStmt ss _ g gg -> search p s ss `mappend` search p s g
+                                               `mappend` either (search p s) (const mempty) gg
+#endif
+          RecStmt{recS_stmts=sts} -> search p s sts
 
 --
 -- Note [SearchRecStmt]
@@ -374,10 +403,12 @@ instance (Search id id) => Search id (StmtLR id id) where
 --    preserved, so this is fine.
 --
 
+#if __GLASGOW_HASKELL__ < 700
 instance (Search id id) => Search id (GroupByClause id) where
   search p s (GroupByNothing f) = search p s f
   search p s (GroupBySomething using_f e) =
       either (search p s) (const mempty) using_f `mappend` search p s e
+#endif
 
 instance (Search id id) => Search id (ArithSeqInfo id) where
   search p s (From e)         = search p s e
@@ -394,12 +425,131 @@ instance Search id e => Search id (HsRecField id e) where
   search p s (HsRecField _lid a _) = search p s a
 
 instance (Search id id) => Search id (HsBracket id) where
-  search p s (ExpBr e) = search p s e
-  search p s (PatBr q) = search p s q
+  search p s (ExpBr  e) = search p s e
+  search p s (PatBr  q) = search p s q
+#if __GLASGOW_HASKELL__ < 700
   search p s (DecBr g) = search p s g
-  search p s (TypBr t) = search p s t
-  search _ _ (VarBr _) = mempty
+#else
+  search p s (DecBrL g) = search p s g
+  search p s (DecBrG g) = search p s g
+#endif
+  search p s (TypBr  t) = search p s t
+  search _ _ (VarBr  _) = mempty
 
 instance (Search id id) => Search id (HsSplice id) where
   search p s (HsSplice _ e) = search p s e
 
+#if __GLASGOW_HASKELL__ >= 700
+instance (Search id id) => Search id ([id], [id]) where
+  search p s (a, b) = search p s a `mappend` search p s b
+
+instance (Search id id) => Search id (HsDecl id) where
+  search p s (TyClD e)       = search p s e
+  search p s (InstD e)       = search p s e
+  search p s (DerivD e)      = search p s e
+  search p s (ValD e)        = search p s e
+  search p s (SigD e)        = search p s e
+  search p s (DefD e)        = search p s e
+  search p s (ForD e)        = search p s e
+  search p s (WarningD e)    = search p s e
+  search p s (AnnD e)        = search p s e
+  search p s (RuleD e)       = search p s e
+  search p s (SpliceD e)     = search p s e
+  search p s (DocD e)        = search p s e
+  search p s (QuasiQuoteD e) = search p s e
+
+instance (Search id id) => Search id (TyClDecl id) where
+  search p s (ForeignType n _)   = search p s n
+  search p s (TyFamily _ n ns _) = search p s n `mappend` search p s ns
+  search p s (TyData _ ct n v pt _ c d) = search p s ct `mappend` search p s n
+                                                        `mappend` search p s v
+                                                        `mappend` search p s pt
+                                                        `mappend` search p s c
+                                                        `mappend` search p s d
+  search p s (TySynonym n v pt r) = search p s n `mappend` search p s v
+                                                 `mappend` search p s pt
+                                                 `mappend` search p s r
+  search p s (ClassDecl ct n v fd sg m tt dc) = search p s ct `mappend` search p s n
+                                                              `mappend` search p s v
+                                                              `mappend` search p s fd
+                                                              `mappend` search p s sg
+                                                              `mappend` searchBindBag p s m
+                                                              `mappend` search p s tt
+                                                              `mappend` search p s dc
+
+instance (Search id id) => Search id (InstDecl id) where
+  search p s (InstDecl t b sg dc) = search p s t `mappend` searchBindBag p s b
+                                                 `mappend` search p s sg
+                                                 `mappend` search p s dc
+
+instance (Search id id) => Search id (DerivDecl id) where
+  search p s (DerivDecl t) = search p s t
+
+instance (Search id id) => Search id (Sig id) where
+  search p s (TypeSig n t)   = search p s n `mappend` search p s t
+  search p s (IdSig i)       = search p s i
+  search p s (FixSig n)      = search p s n
+  search p s (InlineSig n _) = search p s n
+  search p s (SpecSig n t _) = search p s n `mappend` search p s t
+  search p s (SpecInstSig t) = search p s t
+
+instance (Search id id) => Search id (FixitySig id) where
+  search p s (FixitySig n _) = search p s n
+
+instance (Search id id) => Search id (DefaultDecl id) where
+  search p s (DefaultDecl n) = search p s n
+
+instance (Search id id) => Search id (ForeignDecl id) where
+  search p s (ForeignImport n t _) = search p s n `mappend` search p s t
+  search p s (ForeignExport n t _) = search p s n `mappend` search p s t
+
+instance (Search id id) => Search id (WarnDecl id) where
+  search p s (Warning n _) = search p s n
+
+instance (Search id id) => Search id (AnnDecl id) where
+  search p s (HsAnnotation pr n) = search p s pr `mappend` search p s n
+
+instance (Search id id) => Search id (AnnProvenance id) where
+  search p s (ValueAnnProvenance n) = search p s n
+  search p s (TypeAnnProvenance n)  = search p s n
+  search _ _ (ModuleAnnProvenance)  = mempty
+
+instance (Search id id) => Search id (RuleDecl id) where
+  search p s (HsRule _ _ bn e1 _ e2 _) = search p s bn `mappend` search p s e1
+                                                       `mappend` search p s e2
+
+instance (Search id id) => Search id (RuleBndr id) where
+  search p s (RuleBndr n)      = search p s n
+  search p s (RuleBndrSig n t) = search p s n `mappend` search p s t
+
+instance (Search id id) => Search id (SpliceDecl id) where
+  search p s (SpliceDecl n _) = search p s n
+
+instance (Search id id) => Search id DocDecl where
+  search _ _ _ = mempty
+
+instance (Search id id) => Search id (HsQuasiQuote id) where
+  search _ _ _ = mempty
+
+instance (Search id id) => Search id (ConDecl id) where
+  search p s (ConDecl n _ qv ct dt res _ _) = search p s n `mappend` search p s qv
+                                                           `mappend` search p s ct
+                                                           `mappend` search p s dt
+                                                           `mappend` search p s res
+
+instance (Search id id) => Search id (ConDeclField id) where
+  search p s (ConDeclField n t _) = search p s n `mappend` search p s t
+
+instance (Search id id) => Search id (HsPred id) where
+  search p s (HsClassP n t)   = search p s n  `mappend` search p s t
+  search p s (HsEqualP n1 n2) = search p s n1 `mappend` search p s n2
+  search p s (HsIParam i n)   = search p s i  `mappend` search p s n
+
+instance (Search id id) => Search id (HsTyVarBndr id) where
+  search p s (UserTyVar n _)   = search p s n
+  search p s (KindedTyVar n _) = search p s n
+
+instance (Search id id) => Search id (ResType id) where
+  search _ _ (ResTyH98)    = mempty
+  search p s (ResTyGADT n) = search p s n
+#endif
