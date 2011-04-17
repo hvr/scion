@@ -922,7 +922,7 @@ Bound in the connection's process-buffer.")
       (run-hooks 'scion-connected-hook))
     (message "Connected.")))
 
-(defvar scion-protocol-version 2)
+(defvar scion-protocol-version 1)
 
 (defun scion-check-version (version conn)
   (or (equal version scion-protocol-version)
